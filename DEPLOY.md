@@ -54,6 +54,7 @@ Tables are created automatically on backend startup.
 | Key | Value |
 |-----|--------|
 | `DATABASE_URL` | Neon connection string |
+| `PYTHON_VERSION` | `3.11.9` (required — Render defaults to a too-new Python) |
 | `CORS_ORIGINS` | `https://YOUR-APP.vercel.app` (set after Vercel deploy, then redeploy) |
 | `RAPIDAPI_KEY` | Optional — for live JSearch fetch |
 | `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | Optional — email alerts |
