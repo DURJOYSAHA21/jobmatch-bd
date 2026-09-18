@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-base text-ink font-sans antialiased;
+  }
+
+  ::selection {
+    @apply bg-amber/30 text-ink;
+  }
+
+  input,
+  textarea {
+    @apply bg-surface2 border border-line rounded-card px-3 py-2 text-ink placeholder:text-muted;
+    @apply focus:outline-none focus:ring-1 focus:ring-amber focus:border-amber;
+    @apply transition-all duration-200;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2B3757;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3d4f72;
+  }
+}
+
+/* ── Animations ────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 163, 61, 0.3); }
+  50% { box-shadow: 0 0 20px 4px rgba(232, 163, 61, 0.15); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradientShift 6s ease infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+/* Stagger children */
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 80ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 160ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 240ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 320ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 400ms; }
+
+/* ── Score bar transition ──────────────────────────── */
+.score-fill {
+  transition: width 500ms ease;
+}
+
+/* ── Drag-and-drop zone ────────────────────────────── */
+.drop-zone {
+  @apply border-2 border-dashed border-line rounded-card transition-all duration-300;
+}
+.drop-zone:hover,
+.drop-zone.dragging {
+  @apply border-amber bg-amber/5;
+}
+.drop-zone.dragging {
+  @apply scale-[1.01];
+}
+
+/* ── Glass card effect ─────────────────────────────── */
+.glass-card {
+  background: rgba(22, 30, 51, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(43, 55, 87, 0.6);
+}
+
+/* ── Progress bar ──────────────────────────────────── */
+.progress-bar {
+  @apply h-1 bg-surface2 rounded-pill overflow-hidden;
+}
+.progress-bar-fill {
+  @apply h-full rounded-pill;
+  animation: progress-indeterminate 1.5s ease-in-out infinite;
+  width: 40%;
+}
+
+/* ── Hero grid pattern ─────────────────────────────── */
+.hero-grid {
+  background-image:
+    linear-gradient(rgba(43, 55, 87, 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(43, 55, 87, 0.3) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* ── Smooth page transitions ───────────────────────── */
+.page-enter {
+  animation: fadeIn 0.3s ease-out, slideUp 0.4s ease-out;
+}

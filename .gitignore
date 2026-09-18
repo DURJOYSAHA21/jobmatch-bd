@@ -1,0 +1,37 @@
+# Backend
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.db
+*.sqlite3
+.env
+.env.*
+!.env.example
+backend/.env
+backend/venv/
+venv/
+.venv/
+
+# NLP / model caches (local)
+.cache/
+**/sentence-transformers/
+**/.torch/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Deploy / logs
+*.log
+.vercel/
