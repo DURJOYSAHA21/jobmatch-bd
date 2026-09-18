@@ -9,6 +9,27 @@ Follow these steps in order. Secrets stay in each host's dashboard — never com
 
 ---
 
+## 0. Push this repo to GitHub
+
+From `jobmatch-bd/` (already initialized with an initial commit on `main`):
+
+```powershell
+# One-time: log in (opens browser / device code)
+gh auth login
+
+# Create a private or public repo and push
+gh repo create jobmatch-bd --public --source=. --remote=origin --push
+```
+
+Or without `gh`: create an empty repo on github.com, then:
+
+```powershell
+git remote add origin https://github.com/YOUR_USERNAME/jobmatch-bd.git
+git push -u origin main
+```
+
+---
+
 ## 1. Database — Neon
 
 1. Create a project at https://console.neon.tech
