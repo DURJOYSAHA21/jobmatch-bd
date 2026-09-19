@@ -1,14 +1,15 @@
-"""
-Extracts raw text from an uploaded CV (PDF) and pulls out skills + a
+"""Extracts raw text from an uploaded CV (PDF) and pulls out skills + a
 best-guess education line. Deliberately simple for the MVP — no layout
 analysis, no section detection. Good enough to auto-fill a profile that
 the user can then edit before it's used for matching.
+
+Note: `pdfplumber` is imported inside the function, not at module scope, so
+that uploading CVs is the only thing that pays for it. See the note in
+embeddings.py for why startup time matters on free-tier hosts.
 """
 
 import io
 import re
-
-import pdfplumber
 
 from app.nlp.extractor import extract_skills
 
@@ -20,6 +21,8 @@ _EDUCATION_PATTERNS = [
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
+    import pdfplumber
+
     text_parts = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:

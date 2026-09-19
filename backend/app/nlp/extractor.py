@@ -1,5 +1,4 @@
-"""
-Pulls known skills out of free text (CV text, job descriptions, the
+"""Pulls known skills out of free text (CV text, job descriptions, the
 "interests"/"experience" fields a user types into their profile).
 
 Uses spaCy's PhraseMatcher rather than a trained NER model on purpose:
@@ -9,24 +8,22 @@ Uses spaCy's PhraseMatcher rather than a trained NER model on purpose:
 
 This is a "good enough for MVP" approach. A v2 could fine-tune a proper
 skill-extraction NER model once you have labeled data.
+
+IMPORTANT — lazy loading
+------------------------
+spaCy costs ~2.5 seconds to import. uvicorn must finish importing the app
+before it can bind a port, and hosts like Render kill a deploy that hasn't
+opened a port in time, so the import happens on first use instead of at
+module scope.
 """
 
+import logging
 import re
-
-import spacy
-from spacy.matcher import PhraseMatcher
+from functools import lru_cache
 
 from app.nlp.skills_taxonomy import ALIAS_TO_CANONICAL, SKILLS_TAXONOMY
 
-_nlp = spacy.blank("en")
-_matcher = PhraseMatcher(_nlp.vocab, attr="LOWER")
-
-# Register every alias as a pattern. PhraseMatcher handles multi-word
-# phrases ("machine learning") correctly, which a naive regex/split
-# approach over commas would get wrong for skills embedded in sentences.
-_all_aliases = list(ALIAS_TO_CANONICAL.keys())
-_patterns = [_nlp.make_doc(alias) for alias in _all_aliases]
-_matcher.add("SKILLS", _patterns)
+logger = logging.getLogger(__name__)
 
 # Some aliases (like "R" or "Go") are also common English words. We only
 # trust single-token aliases like these when they appear with clear
@@ -35,13 +32,40 @@ _matcher.add("SKILLS", _patterns)
 _AMBIGUOUS_SHORT_ALIASES = {"r", "go", "cv"}
 
 
+@lru_cache(maxsize=1)
+def _get_matcher():
+    """
+    Build the spaCy pipeline + PhraseMatcher on first use, then reuse it.
+
+    PhraseMatcher handles multi-word phrases ("machine learning") correctly,
+    which a naive regex/split approach over commas would get wrong for skills
+    embedded in sentences.
+    """
+    import spacy
+    from spacy.matcher import PhraseMatcher
+
+    nlp = spacy.blank("en")
+    matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
+    matcher.add("SKILLS", [nlp.make_doc(alias) for alias in ALIAS_TO_CANONICAL])
+    return nlp, matcher
+
+
 def extract_skills(text: str) -> set[str]:
     """Return the set of canonical skill names found in `text`."""
     if not text:
         return set()
 
-    doc = _nlp(text)
-    matches = _matcher(doc)
+    try:
+        nlp, matcher = _get_matcher()
+    except Exception:
+        # Skill extraction is one of five signals. If spaCy can't run, return
+        # nothing and let the other signals rank the jobs rather than failing
+        # the whole request.
+        logger.warning("spaCy unavailable — skipping skill extraction", exc_info=True)
+        return set()
+
+    doc = nlp(text)
+    matches = matcher(doc)
 
     found: set[str] = set()
     for _match_id, start, end in matches:

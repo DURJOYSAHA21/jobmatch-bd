@@ -6,37 +6,42 @@ dyno, and is the standard baseline for semantic-similarity tasks like this
 one. Swap it for a bigger model later if match quality needs it; nothing
 outside this file would need to change.
 
-What changed from the first version, and why
---------------------------------------------
-The original code called model.encode() once per job inside the scoring loop.
-On a free-tier instance (512MB RAM) with 85 jobs in the database that meant 85
-separate encodes per page load: minutes of work, heavy memory churn, and a
-very good chance of the request being killed or the process running out of
-memory. Repeat loads re-did all of it from scratch.
+IMPORTANT — lazy loading
+------------------------
+`sentence_transformers` drags in torch and transformers: ~4 seconds of import
+on a fast machine, and far longer on a throttled free-tier instance.
 
-Now:
-  - warm_cache(texts) encodes everything new in ONE batch, which is far faster
-    and much gentler on memory. The match router calls it before scoring.
-  - embed(text) / embed_cached(text) are cache lookups keyed by a hash of the
-    text, so repeat loads do no model work at all.
-  - A lock guards the model, because FastAPI runs sync endpoints in a
-    threadpool and the underlying Rust tokenizer is not safe to hit from two
-    threads at once ("Already borrowed" errors).
-  - is_available() / load_error() let callers degrade gracefully instead of
-    returning a 500 when the model can't be loaded.
+uvicorn must finish importing the app BEFORE it can bind a port, and hosts
+like Render kill a deploy that hasn't opened a port in time. Importing torch
+at module scope therefore risks the deploy failing outright with
+"No open ports detected". So the heavy import happens inside `_get_model()`,
+on the first request that actually needs an embedding — long after the port
+is open.
 
-Caveats, so this isn't oversold: the cache lives in the process, so it's empty
-after each deploy and isn't shared between workers. The real long-term fix is
-to precompute job embeddings at ingestion time and store them on the Job row.
+Embedding cache
+---------------
+Encoding is the expensive part of matching, and job descriptions basically
+never change once ingested, so every embedding we compute is remembered:
+
+  - warm_cache(texts) encodes anything new in ONE batch call, which is far
+    faster than one call per text. The match router calls it before scoring.
+  - embed(text) / embed_cached(text) are cache lookups that fall back to a
+    single encode.
+
+Before the cache existed, every /match request re-encoded the whole jobs table
+one job at a time: ~57 seconds per page load on a free-tier instance. Now
+repeat loads do no model work at all.
+
+If the model can't be loaded — interrupted download, out of memory, no
+network — the failure is remembered so we don't retry (and stall) 85 times in
+one request, and callers fall back to a neutral score instead of 500ing.
 """
 
 import hashlib
 import threading
 import traceback
-from functools import lru_cache
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 _MODEL_NAME = "all-MiniLM-L6-v2"
 
@@ -47,38 +52,60 @@ _cache: dict[str, np.ndarray] = {}
 _hits = 0
 _misses = 0
 
-# Guards model loading and every encode call. See the module docstring.
+# Guards model loading and every encode call. FastAPI runs sync endpoints in a
+# threadpool and the tokenizer underneath is not safe from two threads at once.
 _lock = threading.RLock()
 
-# Set if the model could not be loaded, so callers can fall back instead of
-# failing the whole request. Reset by a successful load.
+_model = None
 _load_error: str | None = None
+_load_failed = False
 
 
-@lru_cache(maxsize=1)
-def _get_model() -> SentenceTransformer:
-    # Loaded once per process (first request pays the cost, ~a few seconds;
-    # every request after is fast).
-    return SentenceTransformer(_MODEL_NAME)
+def _get_model():
+    """
+    Load the model on first use. Raises if it can't be loaded.
+
+    On failure the state is remembered: later calls raise immediately instead
+    of re-running the import (which would otherwise be retried once per job,
+    turning one failure into 85 slow failures).
+    """
+    global _model, _load_error, _load_failed
+
+    if _model is not None:
+        return _model
+    if _load_failed:
+        raise RuntimeError(f"Embedding model unavailable: {_load_error}")
+
+    with _lock:
+        if _model is not None:
+            return _model
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            _model = SentenceTransformer(_MODEL_NAME)
+        except Exception:
+            _load_failed = True
+            _load_error = traceback.format_exc()
+            raise
+    return _model
 
 
 def is_available() -> bool:
     """True if the embedding model can be used right now."""
-    global _load_error
-    with _lock:
-        try:
-            _get_model()
-            _load_error = None
-            return True
-        except Exception:
-            _load_error = traceback.format_exc()
-            return False
+    try:
+        _get_model()
+        return True
+    except Exception:
+        return False
 
 
 def load_error() -> str | None:
-    """The traceback from the last failed model load, or None."""
-    is_available()
-    return _load_error
+    """Traceback from the failed model load, or None if it's fine."""
+    try:
+        _get_model()
+        return None
+    except Exception:
+        return _load_error
 
 
 def _key(text: str) -> str:
@@ -155,6 +182,8 @@ def cache_stats() -> dict:
         "hits": _hits,
         "misses": _misses,
         "hit_rate": round(_hits / total, 3) if total else 0.0,
+        "model_loaded": _model is not None,
+        "model_failed": _load_failed,
     }
 
 
@@ -162,3 +191,15 @@ def cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
     # Vectors are already L2-normalized (normalize_embeddings=True above),
     # so cosine similarity is just the dot product.
     return float(np.dot(vec_a, vec_b))
+
+
+def preload() -> None:
+    """
+    Load the model now. Called from a background thread at startup so the
+    first user request doesn't pay the import + model-load cost. Safe to call
+    more than once.
+    """
+    try:
+        _get_model()
+    except Exception:
+        pass
