@@ -26,6 +26,7 @@ did is more valuable (and more defensible in a viva/interview) than
 squeezing out a fancier black-box model.
 """
 
+import logging
 from dataclasses import dataclass, field
 
 from app.nlp import embeddings
@@ -51,7 +52,7 @@ class MatchResult:
     explanation: str
 
 
-def _profile_full_text(profile) -> str:
+def profile_full_text(profile) -> str:
     """Concatenate every free-text field so the embedding sees the whole picture."""
     parts = [
         profile.education or "",
@@ -62,10 +63,35 @@ def _profile_full_text(profile) -> str:
     return ". ".join(p for p in parts if p)
 
 
+logger = logging.getLogger(__name__)
+
+# Returned for the semantic signal when the embedding model can't be used.
+# Neutral rather than punitive: the other four signals still rank the jobs.
+NEUTRAL_SEMANTIC_SCORE = 50.0
+
+
 def score_semantic(profile, job) -> float:
-    profile_vec = embeddings.embed(_profile_full_text(profile))
-    job_vec = embeddings.embed(job.description or "")
-    similarity = embeddings.cosine_similarity(profile_vec, job_vec)
+    """
+    Embedding similarity between the whole profile and the job description.
+
+    If the embedding model is unusable right now — an interrupted model
+    download, the process getting killed for memory on a free-tier instance —
+    fall back to a neutral score instead of raising. Otherwise one bad model
+    load takes down the entire Matches page. `GET /match/debug/self-check`
+    reports whether this fallback is active.
+    """
+    try:
+        profile_vec = embeddings.embed_cached(profile_full_text(profile))
+        job_vec = embeddings.embed_cached(job.description or "")
+        similarity = embeddings.cosine_similarity(profile_vec, job_vec)
+    except Exception:
+        logger.warning(
+            "Semantic scoring unavailable — using neutral %.0f for this pair",
+            NEUTRAL_SEMANTIC_SCORE,
+            exc_info=True,
+        )
+        return NEUTRAL_SEMANTIC_SCORE
+
     # Cosine similarity for MiniLM on real-world text rarely exceeds ~0.7
     # even for a great match, so rescale to use the 0-100 range sensibly
     # rather than reporting a technically-correct-but-misleadingly-low number.
@@ -170,7 +196,7 @@ def _build_explanation(
 
 def compute_match(profile, job) -> MatchResult:
     profile_skills = extract_skills_from_list(profile.skills) | extract_skills(
-        _profile_full_text(profile)
+        profile_full_text(profile)
     )
     job_skills = extract_skills(job.description or "")
 
